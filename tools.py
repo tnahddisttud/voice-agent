@@ -1,3 +1,6 @@
+import asyncio
+from collections.abc import Callable
+
 from langchain_core.tools import tool
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
@@ -18,13 +21,27 @@ except Exception as exc:  # noqa: BLE001
     ) from exc
 
 
+class SoundControl:
+    """Lets a tool drive the background audio player without importing agent.py."""
+
+    def __init__(self) -> None:
+        self.start_typing: Callable[[], None] = lambda: None
+        self.stop_typing: Callable[[], None] = lambda: None
+
+sound = SoundControl()
+
+
 @tool
-def search_hr_policies(query: str) -> str:
+async def search_hr_policies(query: str) -> str:
     """Search AtliqAI's HR policy documents for information relevant to the user's
     question. Use this whenever the user asks about leave, benefits, conduct,
     or any other HR policy topic."""
-    answer, _ = rag(query, top_k=3, client=qdrant, embedder=embedder)
-    return answer
+    sound.start_typing()
+    try:
+        answer, _ = await asyncio.to_thread(rag, query, 3, qdrant, embedder)
+        return answer
+    finally:
+        sound.stop_typing()
 
 
 # Mock HRMS data — in production this would be a real API call
@@ -50,6 +67,29 @@ def check_leave_balance(employee_id: str) -> str:
     )
 
 
+class CallState:
+    """Shared between the end_call tool and the agent entrypoint.
+
+    The tool can't hang up directly — it runs inside LangGraph and has no handle
+    on the LiveKit session. It raises this flag instead, and agent.py tears the room down once the goodbye has finished playing.
+    """
+
+    def __init__(self) -> None:
+        self.end_requested = False
+
+
+call_state = CallState()
+
+
+@tool
+def end_call() -> str:
+    """End the call and hang up. Use this only when the user clearly signals they
+    are finished — "that's all", "goodbye", "nothing else, thanks". Do NOT use it
+    if they ask to hold, pause, or want a human representative."""
+    call_state.end_requested = True
+    return "The call is ending. Say a short goodbye and nothing else."
+
+
 @tool
 def escalate_to_human(reason: str) -> str:
     """Escalate the conversation to a human HR representative when the question
@@ -63,4 +103,4 @@ def escalate_to_human(reason: str) -> str:
     )
 
 
-ALL_TOOLS = [search_hr_policies, check_leave_balance, escalate_to_human]
+ALL_TOOLS = [search_hr_policies, check_leave_balance, escalate_to_human, end_call]

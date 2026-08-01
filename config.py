@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     collection_name: str = "docs"
     chunk_size: int = 50
 
-    groq_model: str = "llama-3.3-70b-versatile"
+    # llama-3.3-70b-versatile
+    groq_model: str = "openai/gpt-oss-20b"
 
 
 settings = Settings()
